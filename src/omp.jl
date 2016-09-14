@@ -4,9 +4,13 @@ OMP.jl includes some simple crossvalidation facilities to find the best predicti
 module OMP
 
 using IterativeSolvers # need LSQR
+using RegressionTools
 
 export omp
 export cv_omp
+
+# typealias to only allow single or double precision OMP
+typealias Float Union{Float32, Float64}
 
 ###################################
 ### orthogonal matching pursuit ###
@@ -26,7 +30,6 @@ function indmax_abs{T <: Float}(x::DenseVector{T})
     return b
 end
 
-typealias Float Union{Float32, Float64}
 
 "A container object for all temporary arrays used in `omp`."
 type OMPVariables{T <: Float}
@@ -355,9 +358,6 @@ function cv_omp{T <: Float}(
     # check for conformable arrays
     n == length(y) || throw(DimensionMismatch("Row dimension of x ($n) must match number of rows in y ($(length(y)))"))
 
-    # how many elements are in the path?
-    num_models = length(path)
-
     # want to compute a path for each fold
     # the folds are computed asynchronously over processes enumerated by pids
     # master process then reduces errors across folds and returns MSEs
@@ -425,6 +425,5 @@ function omp_working_old{T <: Float}(
     β[Λ] = x
     return β
 end
-
 
 end
