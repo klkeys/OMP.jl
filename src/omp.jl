@@ -151,12 +151,12 @@ end
 ################################
 
 # container object for XV results
-immutable ELSQCrossvalidationResults{T <: Float}
+immutable OMPCrossvalidationResults{T <: Float}
     mses :: Vector{T}
+    path :: Vector{Int}
     b    :: Vector{T}
     bidx :: Vector{Int}
     k    :: Int
-    path :: Vector{Int}
 end
 
 # subroutine to refit preditors after crossvalidation
@@ -164,11 +164,10 @@ function refit_omp{T <: Float}(
     x        :: DenseMatrix{T},
     y        :: DenseVector{T},
     k        :: Int;
-    tol      :: T    = convert(T, 1e-6),
     quiet    :: Bool = true,
 )
     # first use OMP to extract model
-    betas = omp(x, y, k, quiet=quiet, tol=tol)
+    betas = omp(x, y, k, quiet=quiet)
 
     # which components of β are nonzero?
     # cannot use binary indices here since we need to return Int indices
@@ -206,7 +205,6 @@ Arguments:
 - `fold` is the current fold to compute.
 
 Optional Arguments:
-- `tol` is the convergence tolerance to pass to the path computations. Defaults to `1e-4`.
 - `quiet` is a Boolean to activate output. Defaults to `true` (no output).
 
 Output:
@@ -218,7 +216,6 @@ function one_fold{T <: Float}(
     k        :: Int,
     folds    :: DenseVector{Int},
     fold     :: Int;
-    tol      :: Float = convert(T, 1e-4),
     quiet    :: Bool  = true,
 )
 
@@ -234,7 +231,7 @@ function one_fold{T <: Float}(
     y_train = y[train_idx]
 
     # compute the regularization path on the training set
-    betas = omp(x_train, y_train, k, tol=tol, quiet=quiet) 
+    betas = omp(x_train, y_train, k, quiet=quiet) 
 
     # compute the mean out-of-sample error for the TEST set
     errors = vec(sumabs2(broadcast(-, y[test_idx], x[test_idx,:] * betas), 1)) ./ (2*test_size)
@@ -256,7 +253,6 @@ function pfold{T <: Float}(
     folds    :: DenseVector{Int},
     q        :: Int;
     pids     :: DenseVector{Int} = procs(),
-    tol      :: Float = convert(T, 1e-4),
     quiet    :: Bool  = true,
 )
     # how many CPU processes can pfold use?
@@ -299,7 +295,7 @@ function pfold{T <: Float}(
                         # launch job on worker
                         # worker loads data from file paths and then computes the errors in one fold
                         results[current_fold] = remotecall_fetch(worker) do
-                                one_fold(x, y, k, folds, i, tol=tol, quiet=quiet)
+                                one_fold(x, y, k, folds, i, quiet=quiet)
                         end # end remotecall_fetch()
                     end # end while
                 end # end @async
@@ -327,7 +323,6 @@ Optional Arguments:
 - `path` is an `Int` vector that specifies which model sizes to include in the path. Defaults to `path = collect(1:min(p,20))`.
 - `folds` is the partition of the data. Defaults to `IHT.cv_get_folds(n,q)`.
 - `pids`, a vector of process IDs. Defaults to `procs()`, which recruits all available processes.
-- `tol` is the convergence tolerance to pass to the path computations. Defaults to `1e-4`.
 - `quiet` is a Boolean to activate output. Defaults to `true` (no output).
    *NOTA BENE*: each processor outputs feed to the console without regard to the others,
    so setting `quiet = false` can yield very messy output!
@@ -346,7 +341,6 @@ function cv_omp{T <: Float}(
     k        :: Int   = min(size(x,2), 20),
     folds    :: DenseVector{Int} = cv_get_folds(sdata(y),q),
     pids     :: DenseVector{Int} = procs(),
-    tol      :: Float = convert(T, 1e-4),
     quiet    :: Bool  = true,
 )
     # do not allow crossvalidation with fewer than 3 folds
@@ -361,18 +355,19 @@ function cv_omp{T <: Float}(
     # want to compute a path for each fold
     # the folds are computed asynchronously over processes enumerated by pids
     # master process then reduces errors across folds and returns MSEs
-    mses = pfold(x, y, k, folds, q, pids=pids, tol=tol, quiet=quiet)
+    mses = pfold(x, y, k, folds, q, pids=pids, quiet=quiet)
 
     # what is the best model size?
+    path = collect(1:k)
     kbest = convert(Int, floor(mean(path[mses .== minimum(mses)])))
 
     # print results
     !quiet && print_cv_results(mses, path, k)
 
     # refit best model
-    b, bidx = refit_omp(x, y, kbest, tol=tol, quiet=quiet)
+    b, bidx = refit_omp(x, y, kbest, quiet=quiet)
 
-    return OMPCrossvalidationResults(mses, path, b, bidx, kbest)
+    return OMPCrossvalidationResults{T}(mses, path, b, bidx, kbest)
 end
 
 ################
