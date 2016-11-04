@@ -70,7 +70,7 @@ function omp!{T <: Float}(
 )
     # dot_p = x' * r
     # need this for basis pursuit, since OMP selects dot product of largest magnitude 
-    BLAS.gemv!('T', one(T), x, w.r, zero(T), w.dots)
+    At_mul_B!(w.dots, x, w.r)
 
     # λ = indmax(abs(dots))
     λ = indmax_abs(w.dots)
@@ -85,7 +85,7 @@ function omp!{T <: Float}(
     z, = lsqr(temp, y)        
 
     # r = y - temp*z
-    BLAS.gemv!('N', -one(T), temp, z, zero(T), w.r)
+    A_mul_B!(w.r, temp, z)
     BLAS.axpy!(one(T), y, w.r)
 
     # output progress if desired
@@ -161,10 +161,10 @@ end
 
 # subroutine to refit preditors after crossvalidation
 function refit_omp{T <: Float}(
-    x        :: DenseMatrix{T},
-    y        :: DenseVector{T},
-    k        :: Int;
-    quiet    :: Bool = true,
+    x     :: DenseMatrix{T},
+    y     :: DenseVector{T},
+    k     :: Int;
+    quiet :: Bool = true,
 )
     # first use OMP to extract model
     betas = omp(x, y, k, quiet=quiet)
@@ -179,7 +179,7 @@ function refit_omp{T <: Float}(
     # now estimate β with the ordinary least squares estimator β = inv(x'x)x'y
     # return it with the vector of MSEs
     xty = BLAS.gemv('T', x_inferred, sdata(y)) :: Vector{T}
-    xtx = BLAS.gemm('T', 'N', x_inferred, x_inferred) :: Matrix{T}
+    xtx = At_mul_B(x_inferred, x_inferred) :: Matrix{T}
     b   = zeros(T, length(bidx))
     try
         b = (xtx \ xty) :: Vector{T}
@@ -211,12 +211,12 @@ Output:
 - `errors` is a vector of out-of-sample errors (MSEs) for the current fold.
 """
 function one_fold{T <: Float}(
-    x        :: DenseMatrix{T},
-    y        :: DenseVector{T},
-    k        :: Int,
-    folds    :: DenseVector{Int},
-    fold     :: Int;
-    quiet    :: Bool  = true,
+    x     :: DenseMatrix{T},
+    y     :: DenseVector{T},
+    k     :: Int,
+    folds :: DenseVector{Int},
+    fold  :: Int;
+    quiet :: Bool  = true,
 )
 
     # make vector of indices for folds
@@ -234,7 +234,10 @@ function one_fold{T <: Float}(
     betas = omp(x_train, y_train, k, quiet=quiet) 
 
     # compute the mean out-of-sample error for the TEST set
-    errors = vec(sumabs2(broadcast(-, y[test_idx], x[test_idx,:] * betas), 1)) ./ (2*test_size)
+    #errors = vec(sumabs2(broadcast(-, y[test_idx], x[test_idx,:] * betas), 1)) ./ (2*test_size)
+    xb = view(x, test_idx, :) * betas
+    r  = broadcast(-, y[test_idx], xb)
+    errors = vec(sumabs2(r, 1)) ./ (2*test_size)
 
     return errors :: Vector{T}
 end
@@ -252,7 +255,7 @@ function pfold{T <: Float}(
     k        :: Int,
     folds    :: DenseVector{Int},
     q        :: Int;
-    pids     :: DenseVector{Int} = procs(),
+    pids     :: Vector{Int} = procs(),
     quiet    :: Bool  = true,
 )
     # how many CPU processes can pfold use?
@@ -267,7 +270,7 @@ function pfold{T <: Float}(
     nextidx() = (idx=i; i+=1; idx)
 
     # preallocate cell array for results
-    results = cell(q)
+    results = SharedArray(T, (k,q), pids=pids) :: SharedMatrix{T} 
 
     # master process will distribute tasks to workers
     # master synchronizes results at end before returning
@@ -294,9 +297,10 @@ function pfold{T <: Float}(
 
                         # launch job on worker
                         # worker loads data from file paths and then computes the errors in one fold
-                        results[current_fold] = remotecall_fetch(worker) do
+                        r = remotecall_fetch(worker) do
                                 one_fold(x, y, k, folds, i, quiet=quiet)
                         end # end remotecall_fetch()
+                        setindex!(results, r, :, current_fold)
                     end # end while
                 end # end @async
             end # end if
@@ -304,7 +308,7 @@ function pfold{T <: Float}(
     end # end @sync
 
     # return reduction (row-wise sum) over results
-    return (reduce(+, results[1], results) ./ q) :: Vector{T}
+    return (vec(sum(results, 2) ./ q)) :: Vector{T} 
 end
 
 
