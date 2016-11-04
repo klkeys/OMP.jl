@@ -49,13 +49,13 @@ function OMPVariables{T <: Float}(
     y :: DenseVector{T}
 )
     n,p  = size(x)
-    r    = copy(y) 
+    r    = copy(y)
     idxs = Int[]
     a    = zeros(T, n)
-    b    = zeros(T, p) 
-    dots = zeros(T, p) 
+    b    = zeros(T, p)
+    dots = zeros(T, p)
     OMPVariables{T}(r, idxs, a, b, dots)
-end 
+end
 
 """
     omp!(w::OMPVariables, x, y, k [, quiet::Bool = true]) -> Vector
@@ -66,13 +66,13 @@ Thus, `omp!` is best used within a loop or a function such as `omp`.
 """
 function omp!{T <: Float}(
     w :: OMPVariables{T},
-    x :: DenseMatrix{T}, 
-    y :: DenseVector{T}, 
-    k :: Int; 
+    x :: DenseMatrix{T},
+    y :: DenseVector{T},
+    k :: Int;
     quiet::Bool = true
 )
     # dot_p = x' * r
-    # need this for basis pursuit, since OMP selects dot product of largest magnitude 
+    # need this for basis pursuit, since OMP selects dot product of largest magnitude
     At_mul_B!(w.dots, x, w.r)
 
     # λ = indmax(abs(dots))
@@ -85,7 +85,7 @@ function omp!{T <: Float}(
     temp = x[:, w.idxs]
 
     # z = argmin_{b} ( norm(y - temp*b) )
-    z, = lsqr(temp, y)        
+    z, = lsqr(temp, y)       
 
     # r = y - temp*z
     A_mul_B!(w.r, temp, z)
@@ -96,7 +96,7 @@ function omp!{T <: Float}(
 
     # save current model to b
     # no need to erase w.b beforehand since OMP builds models stepwise,
-    # and previous model (sparsity level k-1) is subset of current model of size k 
+    # and previous model (sparsity level k-1) is subset of current model of size k
     w.b[w.idxs] = z
 
     return nothing
@@ -107,7 +107,7 @@ end
 
 Perform *o*rthogonal *m*atching *p*ursuit using a matrix `A`, a response vector `y`, and a sparsity level `k`.
 This function will compute in greedy fashion all sparsity levels `1, 2, ..., k`.
-The result is a matrix of type `SparseMatrixCSC` containing the sparse vector that minimizes `sumsq(y - x*b)` for each model size. 
+The result is a matrix of type `SparseMatrixCSC` containing the sparse vector that minimizes `sumsq(y - x*b)` for each model size.
 
 Arguments:
 - `x` is the design matrix (dictionary)
@@ -115,12 +115,12 @@ Arguments:
 - `k` is the desired sparsity level
 
 Output:
-- `B` is the sparse matrix whose columns provide estimates of `y` with sparisty level `1, 2, ..., k`. 
+- `B` is the sparse matrix whose columns provide estimates of `y` with sparisty level `1, 2, ..., k`.
 """
 function omp{T <: Float}(
-    x :: DenseMatrix{T}, 
-    y :: DenseVector{T}, 
-    k :: Int; 
+    x :: DenseMatrix{T},
+    y :: DenseVector{T},
+    k :: Int;
     quiet::Bool = true
 )
     # size of problem?
@@ -145,7 +145,7 @@ function omp{T <: Float}(
     end
 
     # return path
-    return B 
+    return B
 end
 
 
@@ -190,20 +190,20 @@ function refit_omp{T <: Float}(
         warn("caught error: ", e, "\nSetting returned values of b to -Inf")
         fill!(b, -Inf)
     end
-   
+  
     return b, bidx
 end
 
 """
     one_fold(x, y, k, folds, fold) -> Vector
 
-For a regularization path given by the integer `k`, 
+For a regularization path given by the integer `k`,
 this function performs orthogonal matching pursuit on `x` and `y` and computes an out-of-sample error based on the indices given in `folds`.
 
 Arguments:
 - `x` is the `n` x `p` design matrix.
 - `y` is the `n`-vector of responses.
-- `k` is an integer that specifies the maximum desired sparsity level to test. 
+- `k` is an integer that specifies the maximum desired sparsity level to test.
 - `folds` is an `Int` vector indicating which component of `y` goes to which fold, e.g. `folds = IHT.cv_get_folds(n,nfolds)`
 - `fold` is the current fold to compute.
 
@@ -234,7 +234,7 @@ function one_fold{T <: Float}(
     y_train = y[train_idx]
 
     # compute the regularization path on the training set
-    betas = omp(x_train, y_train, k, quiet=quiet) 
+    betas = omp(x_train, y_train, k, quiet=quiet)
 
     # compute the mean out-of-sample error for the TEST set
     #errors = vec(sumabs2(broadcast(-, y[test_idx], x[test_idx,:] * betas), 1)) ./ (2*test_size)
@@ -273,7 +273,7 @@ function pfold{T <: Float}(
     nextidx() = (idx=i; i+=1; idx)
 
     # preallocate cell array for results
-    results = SharedArray(T, (k,q), pids=pids) :: SharedMatrix{T} 
+    results = SharedArray(T, (k,q), pids=pids) :: SharedMatrix{T}
 
     # master process will distribute tasks to workers
     # master synchronizes results at end before returning
@@ -311,7 +311,7 @@ function pfold{T <: Float}(
     end # end @sync
 
     # return reduction (row-wise sum) over results
-    return (vec(sum(results, 2) ./ q)) :: Vector{T} 
+    return (vec(sum(results, 2) ./ q)) :: Vector{T}
 end
 
 
@@ -344,7 +344,7 @@ An `OMPCrossvalidationResults` object with the following fields:
 function cv_omp{T <: Float}(
     x     :: DenseMatrix{T},
     y     :: DenseVector{T};
-    q     :: Int  = cv_get_num_folds(3,5) 
+    q     :: Int  = cv_get_num_folds(3,5),
     k     :: Int  = min(size(x,2), 20),
     folds :: DenseVector{Int} = cv_get_folds(sdata(y),q),
     pids  :: Vector{Int} = procs(),
@@ -385,18 +385,18 @@ end
 # instead use omp! as OMP function
 # then omp() will compute entire path of betas
 function omp_working_old{T <: Float}(
-    Φ :: DenseMatrix{T}, 
-    v :: DenseVector{T}, 
-    m :: Int; 
+    Φ :: DenseMatrix{T},
+    v :: DenseVector{T},
+    m :: Int;
     quiet::Bool = true
 )
     n,p = size(Φ);
     β = zeros(T, p);
-    r = copy(v); 
+    r = copy(v);
     Λ = Int[];
     a = zeros(T, n)
     x = [zero(T)]
-    dot_p = zeros(T, p) 
+    dot_p = zeros(T, p)
 
     for iter = 1:m
         # dot_p = Φ' * r;
@@ -412,7 +412,7 @@ function omp_working_old{T <: Float}(
         # x = argmin_{y} ( norm(v - temp*y) )
 #        x = pinv(temp) * v;
 #        x = temp \ v
-        x, = lsqr(temp, v)        
+        x, = lsqr(temp, v)       
 
         # a = temp*x
         BLAS.gemv!('N', 1.0, temp, x, 0.0, a)
