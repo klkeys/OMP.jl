@@ -12,6 +12,9 @@ export cv_omp
 # typealias to only allow single or double precision OMP
 typealias Float Union{Float32, Float64}
 
+# subroutine to compute a default number of folds
+@inline cv_get_num_folds(nmin::Int, nmax::Int) = max(nmin, min(Sys.CPU_CORES::Int, nmax))
+
 ###################################
 ### orthogonal matching pursuit ###
 ###################################
@@ -339,13 +342,13 @@ An `OMPCrossvalidationResults` object with the following fields:
 - `bidx`, a vector of `k` indices indicating the support of the best model.
 """
 function cv_omp{T <: Float}(
-    x        :: DenseMatrix{T},
-    y        :: DenseVector{T};
-    q        :: Int   = max(3, min(CPU_CORES, 5)),
-    k        :: Int   = min(size(x,2), 20),
-    folds    :: DenseVector{Int} = cv_get_folds(sdata(y),q),
-    pids     :: DenseVector{Int} = procs(),
-    quiet    :: Bool  = true,
+    x     :: DenseMatrix{T},
+    y     :: DenseVector{T};
+    q     :: Int  = cv_get_num_folds(3,5) 
+    k     :: Int  = min(size(x,2), 20),
+    folds :: DenseVector{Int} = cv_get_folds(sdata(y),q),
+    pids  :: Vector{Int} = procs(),
+    quiet :: Bool = true,
 )
     # do not allow crossvalidation with fewer than 3 folds
     q > 2 || throw(ArgumentError("Number of folds q = $q must be at least 3."))
