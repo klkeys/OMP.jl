@@ -46,11 +46,13 @@ end
 "A funtion to create an `OMPVariables` object from a matrix `x` and a vector `y`."
 function OMPVariables{T <: Float}(
     x :: DenseMatrix{T},
-    y :: DenseVector{T}
+    y :: DenseVector{T},
+    k :: Int
 )
     n,p  = size(x)
     r    = copy(y)
-    idxs = Int[]
+    #idxs = Int[]
+    idxs = ones(Int, k) 
     a    = zeros(T, n)
     b    = zeros(T, p)
     dots = zeros(T, p)
@@ -69,35 +71,35 @@ function omp!{T <: Float}(
     x :: DenseMatrix{T},
     y :: DenseVector{T},
     k :: Int;
-    quiet::Bool = true
 )
     # dot_p = x' * r
     # need this for basis pursuit, since OMP selects dot product of largest magnitude
     At_mul_B!(w.dots, x, w.r)
 
-    # λ = indmax(abs(dots))
+    # compute index of next index to add to support 
     λ = indmax_abs(w.dots)
 
     # expand active set indices Λ = [Λ i]
-    push!(w.idxs, λ)
+    w.idxs[k] = λ 
+    idx       = w.idxs[1:k]
 
     # get subset of x corresponding to active set
-    temp = x[:, w.idxs]
+    temp = x[:, idx]
+    #temp = view(x, :, idx) ### this variant burns CPU to avoid allocating memory; only good for biiiiig matrices
 
     # z = argmin_{b} ( norm(y - temp*b) )
     z, = lsqr(temp, y)       
 
     # r = y - temp*z
+    #BLAS.gemv!('N', -one(T), temp, z, zero(T), w.r)
+    #BLAS.axpy!(one(T), y, w.r)
     A_mul_B!(w.r, temp, z)
-    BLAS.axpy!(one(T), y, w.r)
-
-    # output progress if desired
-    quiet || @printf("Iter %d, residual: %f\n", iter, norm(w.r));
+    BLAS.axpy!(-one(T), y, w.r)
 
     # save current model to b
     # no need to erase w.b beforehand since OMP builds models stepwise,
     # and previous model (sparsity level k-1) is subset of current model of size k
-    w.b[w.idxs] = z
+    w.b[idx] = z
 
     return nothing
 end
@@ -127,7 +129,8 @@ function omp{T <: Float}(
     n,p = size(x)
 
     # initialize all temporary arrays
-    w = OMPVariables(x, y)
+    #w = OMPVariables(x, y)
+    w = OMPVariables(x, y, k)
 
     # initialize sparse matrix of models
     # will fill this iteratively as we grow our beta
@@ -138,7 +141,10 @@ function omp{T <: Float}(
     for i = 1:k
 
         # this computes model size i
-        omp!(w, x, y, i, quiet=quiet)
+        omp!(w, x, y, i)
+
+        # output progress if desired
+        quiet || @printf("Sparsity level: %d, sum(residuals): %f\n", i, norm(w.r));
 
         # save model for sparsity level i
         B[:,i] = sparsevec(w.b)
