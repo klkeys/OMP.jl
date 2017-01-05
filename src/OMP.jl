@@ -372,10 +372,10 @@ function cv_omp{T <: Float}(
 
     # what is the best model size?
     path = collect(1:k)
-    kbest = convert(Int, floor(mean(path[mses .== minimum(mses)])))
+    kbest = path[indmin(mses)] :: Int 
 
     # print results
-    !quiet && print_cv_results(mses, path, k)
+    !quiet && print_cv_results(mses, path, kbest)
 
     # refit best model
     b, bidx = refit_omp(x, y, kbest, quiet=quiet)
