@@ -5,6 +5,7 @@ module OMP
 
 using IterativeSolvers # need LSQR
 using RegressionTools
+using PLINK
 
 export omp
 export cv_omp

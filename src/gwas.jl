@@ -27,7 +27,7 @@ function omp!{T <: Float}(
     x    :: BEDFile{T},
     y    :: SharedVector{T},
     k    :: Int;
-    m    :: Vector{Int} = ones(Int, length(y)),
+    m    :: Vector{Int} = ones(Int, length(y)), # bitmask of 0s and 1s
     pids :: Vector{Int} = procs(x)
 )
     # dot_p = x' * r
@@ -103,7 +103,7 @@ function omp{T <: Float}(
         omp!(w, x, y, i)
 
         # output progress if desired
-        quiet || @printf("Sparsity level: %d, sum(residuals): %f\n", i, norm(w.r));
+        quiet || @printf("Sparsity level: %d, norm(residuals): %f\n", i, norm(w.r));
 
         # save model for sparsity level i
         B[:,i] = sparsevec(w.b)
