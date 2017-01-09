@@ -150,7 +150,7 @@ function pfold{T <: Float}(
                         # launch job on worker
                         # worker loads data from file paths and then computes the errors in one fold
                         r = remotecall_fetch(worker) do
-                                one_fold(x, y, k, folds, i, quiet=quiet)
+                                one_fold(x, y, k, folds, current_fold, quiet=quiet)
                         end # end remotecall_fetch()
                         setindex!(results, r, :, current_fold)
                     end # end while
@@ -221,7 +221,10 @@ function cv_omp{T <: Float}(
     !quiet && print_cv_results(mses, path, kbest)
 
     # refit best model
-    b, bidx = refit_omp(x, y, kbest, quiet=quiet)
+    #b, bidx = refit_omp(x, y, kbest, quiet=quiet)
+    betas = omp(x, y, kbest, quiet=quiet)
+    bidx  = find(betas[:,end])
+    b     = full(betas[bidx,end])
 
     return OMPCrossvalidationResults{T}(mses, path, b, bidx, kbest)
 end
