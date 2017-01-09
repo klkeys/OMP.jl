@@ -14,3 +14,17 @@ function indmax_abs{T <: Float}(x::DenseVector{T})
     end
     return b
 end
+
+
+# verbose printing of cv results
+function print_cv_results{T <: Float}(io::IO, errors::Vector{T}, path::DenseVector{Int}, k::Int)
+    println(io, "\n\nCrossvalidation Results:")
+    println(io, "k\tMSE")
+    for i = 1:length(errors)
+        println(io, path[i], "\t", errors[i])
+    end
+    println(io, "\nThe lowest MSE is achieved at k = ", k)
+end
+
+# default IO for print_cv_results is STDOUT
+print_cv_results{T <: Float}(errors::Vector{T}, path::DenseVector{Int}, k::Int) = print_cv_results(STDOUT, errors, path, k)
